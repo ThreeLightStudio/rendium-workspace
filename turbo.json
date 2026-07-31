@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build:wasm": {
+      "outputs": ["pkg/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "build:wasm"],
+      "outputs": ["dist/**", "build/**", ".next/**"],
+      "env": ["NODE_ENV"]
+    },
+    "lint": {
+      "dependsOn": [],
+      "outputs": []
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": [],
+      "inputs": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.test.ts", "src/**/*.spec.ts"]
+    }
+  }
+}

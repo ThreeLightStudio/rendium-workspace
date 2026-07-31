@@ -1,0 +1,46 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "files": {
+    "include": ["**"],
+    "ignore": [
+      "**/graphify-out",
+      "**/dist",
+      "**/out",
+      "**/storybook-static",
+      "**/.storybook/metadata.json",
+      "**/styled-system",
+      "**/styled-system/**",
+      "**/node_modules",
+      "**/coverage",
+      "**/build",
+      "**/.turbo",
+      "**/*.d.ts",
+      "**/*.js.map"
+    ]
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "error",
+        "noInferrableTypes": "error"
+      },
+      "complexity": {
+        "noForEach": "error"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all"
+    }
+  }
+}

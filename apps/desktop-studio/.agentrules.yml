@@ -1,0 +1,146 @@
+schema_version: 1
+kind: package
+
+metadata:
+  name: desktop-studio
+  description: Agent rules for the Rendium Studio desktop UI bounded context.
+
+bounded_context:
+  name: desktop-studio
+  responsibility: >
+    Own the Electron shell, React renderer UI, project asset surfaces, AI chat
+    surfaces, Storybook stories, styling system, and product documentation for
+    Rendium Studio.
+  in_scope:
+    - src/main
+    - src/preload
+    - src/renderer
+    - src/shared
+    - src/stories
+    - .storybook
+    - _docs/product
+  out_of_scope:
+    - engine-domain behavior
+    - manifest mutation internals
+    - WebGPU rendering invariants
+    - package-level APIs owned by @rendium/engine
+
+inheritance:
+  extends: ../../.agentrules.yml
+  mode: override
+  precedence: child_overrides_parent
+
+principles:
+  - id: user-flow-first
+    label: User flow first
+    statement: Treat the agent as the UI/UX owner for desktop-studio and start from the user's journey before component internals.
+    enforcement: Anchor UI changes in the intended task flow, interaction continuity, discoverability, accessibility, and product clarity.
+  - id: product-evidence
+    label: Product evidence
+    statement: Use desktop-studio product docs and existing UI states as the source of truth for UX decisions.
+    enforcement: Read the relevant product note or README before changing behavior, and state uncertainty instead of inventing product policy.
+  - id: interface-boundary
+    label: Interface boundary
+    statement: Keep renderer and app-shell work on public engine contracts instead of reaching into engine internals.
+    enforcement: Communicate with @rendium/engine through public intent and snapshot APIs; document engine follow-up separately when the UI reveals a contract gap.
+
+resident_roles:
+  - id: ux-design-lead
+    label: UX Design Lead
+    responsibility: >
+      Keep desktop-studio approachable as a beginner-focused AI video editor by
+      prioritizing content-canvas workflows, progressive disclosure,
+      accessibility, and visual clarity over exposed engine internals.
+    applies_to:
+      - renderer UI changes
+      - Storybook stories and visual states
+      - interaction, layout, accessibility, and copy decisions
+      - user-facing representations of engine or render state
+    operating_principle: >
+      Preserve Rendium's WebGPU reliability in the background while presenting
+      View and Information Architecture choices through user goals, AI
+      assistance, and clear content-editing outcomes.
+  - id: product-manager
+    label: Product Manager
+    responsibility: >
+      Keep desktop-studio work aligned with the MVP user journey, product
+      documentation, Storybook state coverage, scope control, and user-value
+      criteria before implementation details.
+    applies_to:
+      - product-facing desktop-studio tasks
+      - MVP workflow and acceptance criteria decisions
+      - Storybook onboarding and review expectations
+      - scope boundaries between UI needs and engine follow-ups
+    operating_principle: >
+      Validate the intended user outcome and Storybook-visible states before
+      expanding scope, and treat engine architecture or state model changes as
+      out of scope unless explicitly requested.
+
+conventions:
+  - id: product-docs-first
+    label: Product docs first
+    statement: Read ./README.md and the relevant ./_docs/product note before changing user-facing desktop-studio behavior.
+  - id: preserve-studio-patterns
+    label: Preserve Studio patterns
+    statement: Preserve existing React, Panda CSS, Storybook, and Electron Vite patterns unless the task explicitly changes them.
+  - id: storybook-onboarding
+    label: Storybook onboarding
+    statement: Before changing UI components or stories, read ./README.md's Styling And Storybook guidance and use existing stories or story shell utilities as the onboarding path.
+  - id: data-f-anchors
+    label: data-f anchors
+    statement: Use descriptive kebab-case data-f anchors for renderer DOM elements that need screenshots, tests, or debug tooling.
+  - id: engine-public-contracts
+    label: Engine public contracts
+    statement: Renderer UI should communicate with @rendium/engine through public intent and snapshot APIs rather than engine internals.
+
+required_reading:
+  - id: studio-readme
+    label: Studio README
+    path: ./README.md
+  - id: studio-product-index
+    label: Studio product docs index
+    path: ./_docs/product/README.md
+
+sops:
+  - id: ui-flow-change
+    name: UI-흐름-변경
+    trigger: User-facing renderer, shell, Storybook, accessibility, or interaction changes in desktop-studio.
+    goal: Preserve a coherent user journey while keeping implementation scoped to the owning UI surface.
+    steps:
+      - Identify the user task, entry point, expected feedback, and completion state before editing components.
+      - Read the relevant product note or create an explicit assumption when no product note exists.
+      - Review README Storybook guidance and nearby stories before adding or changing component states.
+      - Keep visual, interaction, and copy changes consistent with existing Studio patterns and Storybook states.
+      - Add or preserve data-f anchors when the UI needs screenshot, test, or debug stability.
+      - Run the narrowest desktop-studio checks that prove the changed flow.
+    outputs:
+      - key: user_flow_summary
+        type: markdown_list
+      - key: touched_ui_surfaces
+        type: array[string]
+      - key: verification_result
+        type: markdown_list
+  - id: engine-contract-ui-change
+    name: 엔진-계약-UI-변경
+    trigger: A desktop-studio UI change depends on engine state, intents, snapshots, or manifest behavior.
+    goal: Keep UI implementation aligned with public engine contracts without crossing package ownership.
+    steps:
+      - Confirm the needed engine data or command exists in public intent and snapshot APIs.
+      - Avoid importing engine internals or changing engine-domain behavior from desktop-studio.
+      - If a contract gap exists, document the UI need and hand off an engine follow-up instead of guessing.
+      - Validate the UI with stable fixtures, Storybook states, or focused tests where practical.
+    outputs:
+      - key: engine_contract_used
+        type: string
+      - key: ui_boundary_notes
+        type: markdown_list
+      - key: follow_up_actions
+        type: array[string]
+
+override_policy:
+  allow_child_specialization: true
+  root_rules_still_apply: true
+  package_must_not:
+    - change engine-domain behavior unless explicitly requested
+    - import @rendium/engine internals from renderer UI
+    - restate workspace policy unless overriding it

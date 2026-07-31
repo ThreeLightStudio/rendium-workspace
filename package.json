@@ -1,0 +1,57 @@
+{
+  "name": "rendium-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "author": "Rendium Contributors",
+  "scripts": {
+    "agent": "node ./scripts/agent.cjs",
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check --write .",
+    "check:data-f": "node scripts/check-data-f.cjs",
+    "check:data-f:all": "node scripts/check-data-f.cjs --all",
+    "verify": "pnpm check && pnpm check:data-f:all && turbo run test build",
+    "prepare": "husky",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish",
+    "build:engine": "turbo run build --filter @rendium/engine",
+    "test:engine": "turbo run test --filter @rendium/engine",
+    "dev:studio": "pnpm --filter desktop-studio dev",
+    "build:studio": "pnpm --filter desktop-studio build",
+    "build:studio:mac": "pnpm --filter desktop-studio build:mac",
+    "build:studio:win": "pnpm --filter desktop-studio build:win",
+    "build:studio:icons": "pnpm --filter desktop-studio build:icons",
+    "check:studio": "pnpm --filter desktop-studio check",
+    "clean": "pnpm -r exec rm -rf dist build out .turbo storybook-static styled-system *.tsbuildinfo && rm -rf .turbo",
+    "clean:deep": "pnpm run clean && pnpm -r exec rm -rf node_modules && rm -rf node_modules .pnpm-store"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "@biomejs/biome": "^1.6.0",
+    "@changesets/cli": "^2.27.1",
+    "@webgpu/types": "^0.1.69",
+    "husky": "^9.1.7",
+    "turbo": "^2.8.21",
+    "typescript": "^6.0.2",
+    "vitest": "^1.4.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "electron",
+      "electron-winstaller",
+      "electron-builder",
+      "esbuild",
+      "node-gyp",
+      "lightningcss"
+    ]
+  },
+  "dependencies": {
+    "lucide-react": "^1.7.0"
+  }
+}

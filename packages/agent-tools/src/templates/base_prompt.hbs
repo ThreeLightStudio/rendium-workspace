@@ -1,0 +1,137 @@
+# Rendium Agent Rules
+
+You are operating inside the Rendium monorepo. Follow the merged workspace and package rules below.
+
+## Metadata
+
+- Name: {{metadata.name}}
+- Description: {{metadata.description}}
+- Schema Version: {{schema_version}}
+- Kind: {{kind}}
+
+{{#if bounded_context}}
+## Bounded Context
+
+- Name: {{bounded_context.name}}
+- Responsibility: {{bounded_context.responsibility}}
+
+### In Scope
+
+{{#each bounded_context.in_scope}}
+- {{this}}
+{{/each}}
+
+### Out of Scope
+
+{{#each bounded_context.out_of_scope}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+{{#if inheritance}}
+## Inheritance
+
+- Mode: {{inheritance.mode}}
+- Precedence: {{inheritance.precedence}}
+{{#if inheritance.extends}}
+- Extends: {{inheritance.extends}}
+{{/if}}
+{{#if inheritance.child_rule_files}}
+- Child Rule Files:
+{{#each inheritance.child_rule_files}}
+  - {{this}}
+{{/each}}
+{{/if}}
+{{/if}}
+
+{{#if principles}}
+## Principles
+
+{{#each principles}}
+### {{label}} (`{{id}}`)
+
+- Statement: {{statement}}
+- Enforcement: {{enforcement}}
+
+{{/each}}
+{{/if}}
+
+{{#if resident_roles}}
+## Resident Roles
+
+{{#each resident_roles}}
+### {{label}} (`{{id}}`)
+
+- Responsibility: {{responsibility}}
+- Applies To:
+{{#each applies_to}}
+  - {{this}}
+{{/each}}
+- Operating Principle: {{operating_principle}}
+
+{{/each}}
+{{/if}}
+
+{{#if conventions}}
+## Conventions
+
+{{#each conventions}}
+### {{label}} (`{{id}}`)
+
+- Statement: {{statement}}
+
+{{/each}}
+{{/if}}
+
+{{#if required_reading}}
+## Required Reading
+
+Read these documents in order:
+
+{{#each required_reading}}
+- {{formatReading this}}
+{{/each}}
+
+{{/if}}
+
+## SOPs
+
+{{#each sops}}
+### {{name}} (`{{id}}`)
+
+- Trigger: {{trigger}}
+- Goal: {{goal}}
+- Steps:
+{{#each steps}}
+  - {{formatStep this}}
+{{/each}}
+- Outputs:
+{{#each outputs}}
+  - {{key}}: {{type}}
+{{/each}}
+
+{{/each}}
+
+{{#if override_policy}}
+## Override Policy
+
+- Allow child specialization: {{override_policy.allow_child_specialization}}
+{{#if override_policy.do_not_repeat_child_conventions}}
+- Do not repeat child conventions: {{override_policy.do_not_repeat_child_conventions}}
+{{/if}}
+{{#if override_policy.root_rules_still_apply}}
+- Root rules still apply: {{override_policy.root_rules_still_apply}}
+{{/if}}
+{{#if override_policy.root_is_authoritative_for}}
+- Root is authoritative for:
+{{#each override_policy.root_is_authoritative_for}}
+  - {{this}}
+{{/each}}
+{{/if}}
+{{#if override_policy.package_must_not}}
+- Package must not:
+{{#each override_policy.package_must_not}}
+  - {{this}}
+{{/each}}
+{{/if}}
+{{/if}}

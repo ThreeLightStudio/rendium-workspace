@@ -1,0 +1,50 @@
+# 의존성 디렉토리
+node_modules/
+.pnpm-store/
+
+# 로컬 AI 에이전트 상태 및 환경 설정
+.codex/
+.serena/
+
+# 빌드 및 컴파일 산출물
+dist/
+build/
+.next/
+# TypeScript 증분 빌드 정보
+*.tsbuildinfo
+pkg/          # Rust wasm-pack 출력 디렉토리
+target/       # Rust Cargo 빌드 디렉토리
+
+# Turborepo 캐시
+.turbo/
+
+# 로그 및 런타임 파일
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# OS 및 에디터 임시 파일
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# 환경 변수 (보안)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# AI 에이전트 환경 최적화를 위한 래퍼 스크립트
+.pnpm-wrapper
+
+# Husky generated hook shims
+.husky/_
+
+# graphify
+graphify-out/

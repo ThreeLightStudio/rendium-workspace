@@ -1,0 +1,108 @@
+schema_version: 1
+kind: package
+
+metadata:
+  name: "@rendium/engine"
+  description: Agent rules for the WebGPU engine bounded context.
+
+bounded_context:
+  name: rendium-engine
+  responsibility: >
+    Own the engine core, manifest/state bridge, timeline reconciliation, and
+    rendering-domain invariants for the Rendium workspace.
+  in_scope:
+    - src/_contracts
+    - src/core
+    - src/store
+    - src/timeline
+    - src/layers
+    - src/_utils
+  out_of_scope:
+    - React UI components
+    - DOM/renderer application code
+    - Storybook and app-shell concerns
+
+inheritance:
+  extends: ../../.agentrules.yml
+  mode: override
+  precedence: child_overrides_parent
+
+principles:
+  - id: cqrs
+    label: CQRS
+    statement: Keep command-style writes and query-style reads separated inside the engine boundary.
+    enforcement: Route mutations through the engine store or typed mutator layer, then observe via snapshots/selectors.
+  - id: flat-architecture
+    label: Flat architecture
+    statement: Preserve the flat manifest data model and marker-based sequence model used by the engine.
+    enforcement: Keep scope markers, layer order, and derived timelines aligned with the existing flat data contract.
+  - id: immutability
+    label: Immutability
+    statement: Treat the manifest as the authoritative source of truth and reconcile runtime state from it.
+    enforcement: Use patch-aware transforms, not ad hoc object mutation, when changing persisted engine state.
+
+conventions:
+  - id: no-ui-deps
+    label: No UI deps
+    statement: Do not introduce React, DOM, or Storybook dependencies into the engine package.
+  - id: state-changes-through-engine-store
+    label: State changes through EngineStore
+    statement: Mutating canonical engine state must flow through EngineStore or the typed manifest mutators.
+  - id: patch-aware-change
+    label: Patch-aware change
+    statement: Any shape change to the manifest must be reviewed against patch paths, reconciler behavior, and existing tests.
+
+required_reading:
+  - id: engine-readme
+    label: Engine README
+    path: ./README.md
+  - id: engine-onboarding-index
+    label: Engine onboarding index
+    path: ./_docs/onboarding/README.md
+  - id: engine-core-layer-onboarding
+    label: Core layer onboarding
+    path: ./_docs/onboarding/core-layer-onboarding.md
+  - id: engine-visual-provider-onboarding
+    label: Visual layer provider onboarding
+    path: ./_docs/onboarding/visual-layer-provider-onboarding.md
+
+sops:
+  - id: edit-sync
+    name: 편집-동기화
+    trigger: Layer edits, reorder operations, undo/redo work, or any manifest mutation that changes engine state.
+    goal: Keep the manifest, patch stream, and runtime scene in sync.
+    steps:
+      - Classify the change by surface: layer property, order, add/remove, or project-level settings.
+      - Update the typed mutator path first so patch paths stay predictable.
+      - If runtime reconciliation is affected, update the reconciler branch and any runtime safety checks together.
+      - Refresh the smallest relevant tests that prove the patch shape and runtime outcome.
+    outputs:
+      - key: changed_mutator_path
+        type: string
+      - key: impacted_patch_paths
+        type: array[string]
+      - key: verification_result
+        type: markdown_list
+  - id: ui-verification
+    name: UI-검증-위임
+    trigger: Engine behavior needs validation from the app shell, renderer, or Storybook.
+    goal: Provide stable engine contracts for the UI agent without crossing the engine package boundary.
+    steps:
+      - Do not import or touch `apps/desktop-studio` files directly.
+      - Produce a contract artifact such as a snapshot, fixture, or package-level test that proves the engine behavior.
+      - Hand the artifact to the orchestrator so a UI-owned agent can perform black-box validation.
+      - Record any app-side follow-up as a separate task.
+    outputs:
+      - key: engine_boundary_result
+        type: string
+      - key: app_validation_notes
+        type: markdown_list
+      - key: follow_up_actions
+        type: array[string]
+
+override_policy:
+  allow_child_specialization: true
+  root_rules_still_apply: true
+  package_must_not:
+    - add UI/runtime dependencies
+    - restate workspace policy unless overriding it

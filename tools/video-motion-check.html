@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Rendium Video Motion Check</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #101114;
+        color: #f5f5f5;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+      .panel {
+        border: 1px solid #2d3037;
+        border-radius: 16px;
+        padding: 20px;
+        background: #181a20;
+      }
+      input,
+      button {
+        font: inherit;
+      }
+      input[type="file"] {
+        display: block;
+        margin: 16px 0;
+      }
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: #7c5cff;
+        color: white;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+      video,
+      canvas {
+        width: 100%;
+        max-height: 320px;
+        margin-top: 16px;
+        border-radius: 12px;
+        background: #000;
+      }
+      pre {
+        overflow: auto;
+        white-space: pre-wrap;
+        border-radius: 12px;
+        padding: 16px;
+        background: #0b0c0f;
+      }
+      .pass {
+        color: #77e0a1;
+      }
+      .fail {
+        color: #ff8c8c;
+      }
+      .warn {
+        color: #ffd166;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Rendium Video Motion Check</h1>
+      <p>
+        Use this QA helper to verify whether an exported MP4 contains real visual motion.
+        It samples frames from the video, compares pixel differences, and reports whether
+        the video appears static while audio may still exist.
+      </p>
+      <section class="panel">
+        <label>
+          Exported MP4
+          <input id="file" type="file" accept="video/mp4,video/*" />
+        </label>
+        <button id="run" disabled>Analyze motion</button>
+        <video id="video" controls muted playsinline></video>
+        <canvas id="canvas" hidden></canvas>
+        <h2>Result</h2>
+        <pre id="result">Choose an exported MP4.</pre>
+      </section>
+    </main>
+    <script>
+      const fileInput = document.querySelector('#file');
+      const runButton = document.querySelector('#run');
+      const video = document.querySelector('#video');
+      const canvas = document.querySelector('#canvas');
+      const result = document.querySelector('#result');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      let objectUrl = null;
+
+      function log(message, className = '') {
+        result.innerHTML += `<span class="${className}">${message}</span>\n`;
+      }
+
+      function once(target, eventName, timeoutMs = 5000) {
+        return new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            cleanup();
+            reject(new Error(`Timed out waiting for ${eventName}`));
+          }, timeoutMs);
+          const cleanup = () => {
+            window.clearTimeout(timeout);
+            target.removeEventListener(eventName, onEvent);
+            target.removeEventListener('error', onError);
+          };
+          const onEvent = () => {
+            cleanup();
+            resolve();
+          };
+          const onError = () => {
+            cleanup();
+            reject(new Error(`Video emitted ${eventName === 'error' ? 'error' : 'error while waiting for ' + eventName}`));
+          };
+          target.addEventListener(eventName, onEvent, { once: true });
+          target.addEventListener('error', onError, { once: true });
+        });
+      }
+
+      async function waitForVideoFrameOrFallback() {
+        if ('requestVideoFrameCallback' in video) {
+          try {
+            await Promise.race([
+              new Promise((resolve) => video.requestVideoFrameCallback(() => resolve('rvfc'))),
+              new Promise((_, reject) =>
+                window.setTimeout(
+                  () => reject(new Error('Timed out waiting for requestVideoFrameCallback')),
+                  8000,
+                ),
+              ),
+            ]);
+            return 'requestVideoFrameCallback';
+          } catch (error) {
+            log(
+              `WARN: ${error instanceof Error ? error.message : String(error)}; falling back to animation frames`,
+              'warn',
+            );
+          }
+        }
+
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return 'animationFrameFallback';
+      }
+
+      async function seekTo(timeSeconds) {
+        const target = Math.min(Math.max(timeSeconds, 0), Math.max(video.duration - 0.05, 0));
+        if (Math.abs(video.currentTime - target) < 0.01) return;
+        video.currentTime = target;
+        await once(video, 'seeked', 8000);
+        return waitForVideoFrameOrFallback();
+      }
+
+      function captureFrame() {
+        canvas.width = video.videoWidth || 1;
+        canvas.height = video.videoHeight || 1;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      }
+
+      function diffFrames(a, b) {
+        const length = Math.min(a.length, b.length);
+        let changedPixels = 0;
+        let totalDelta = 0;
+        for (let index = 0; index < length; index += 4) {
+          const delta =
+            Math.abs(a[index] - b[index]) +
+            Math.abs(a[index + 1] - b[index + 1]) +
+            Math.abs(a[index + 2] - b[index + 2]);
+          if (delta > 12) changedPixels += 1;
+          totalDelta += delta;
+        }
+        const pixels = length / 4;
+        return {
+          changedRatio: pixels > 0 ? changedPixels / pixels : 0,
+          meanDelta: pixels > 0 ? totalDelta / pixels : 0,
+        };
+      }
+
+      async function analyze() {
+        result.textContent = '';
+        runButton.disabled = true;
+        try {
+          if (!Number.isFinite(video.duration) || video.duration <= 0) {
+            await once(video, 'loadedmetadata');
+          }
+          log(`file: ${fileInput.files[0].name}`);
+          log(`duration: ${video.duration.toFixed(3)}s`);
+          log(`video size: ${video.videoWidth}x${video.videoHeight}`);
+          log(`audio tracks: ${video.audioTracks ? video.audioTracks.length : 'not exposed by browser'}`);
+
+          if (!video.videoWidth || !video.videoHeight) {
+            log('FAIL: browser did not expose a video track.', 'fail');
+            return;
+          }
+
+          const sampleCount = Math.min(5, Math.max(3, Math.floor(video.duration)));
+          const times = Array.from({ length: sampleCount }, (_, index) => {
+            const ratio = sampleCount === 1 ? 0.5 : (index + 1) / (sampleCount + 1);
+            return Math.max(0.05, Math.min(video.duration * ratio, video.duration - 0.05));
+          });
+
+          const frames = [];
+          for (const time of times) {
+            log(`seeking to ${time.toFixed(3)}s...`);
+            const waitMethod = await seekTo(time);
+            frames.push({ time, data: captureFrame() });
+            log(`sampled frame at ${time.toFixed(3)}s via ${waitMethod}`);
+          }
+
+          const diffs = [];
+          for (let index = 1; index < frames.length; index += 1) {
+            diffs.push(diffFrames(frames[index - 1].data, frames[index].data));
+          }
+          const maxChangedRatio = Math.max(...diffs.map((diff) => diff.changedRatio));
+          const maxMeanDelta = Math.max(...diffs.map((diff) => diff.meanDelta));
+
+          log(`max changed pixel ratio: ${(maxChangedRatio * 100).toFixed(3)}%`);
+          log(`max mean RGB delta: ${maxMeanDelta.toFixed(3)}`);
+
+          if (maxChangedRatio < 0.001 && maxMeanDelta < 0.5) {
+            log('FAIL: sampled frames are effectively identical. Export appears visually frozen.', 'fail');
+          } else if (maxChangedRatio < 0.01 && maxMeanDelta < 2) {
+            log('WARN: very little visual motion detected. Confirm with the source clip.', 'warn');
+          } else {
+            log('PASS: visual motion detected between exported frames.', 'pass');
+          }
+        } catch (error) {
+          log(`ERROR: ${error instanceof Error ? error.message : String(error)}`, 'fail');
+        } finally {
+          runButton.disabled = !fileInput.files.length;
+        }
+      }
+
+      fileInput.addEventListener('change', () => {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        const file = fileInput.files[0];
+        result.textContent = file ? 'Loaded. Click Analyze motion.' : 'Choose an exported MP4.';
+        runButton.disabled = !file;
+        if (!file) return;
+        objectUrl = URL.createObjectURL(file);
+        video.src = objectUrl;
+      });
+
+      runButton.addEventListener('click', analyze);
+    </script>
+  </body>
+</html>

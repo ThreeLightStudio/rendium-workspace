@@ -1,0 +1,102 @@
+schema_version: 1
+kind: root
+
+metadata:
+  name: rendium-workspace
+  description: Repo-wide agent governance for the Rendium monorepo.
+
+bounded_context:
+  name: workspace-governance
+  responsibility: >
+    Define cross-cutting agent policy, ownership boundaries, and verification
+    expectations for the entire workspace.
+  in_scope:
+    - apps/*
+    - packages/*
+  out_of_scope:
+    - package-local implementation details
+    - domain-specific terminology that belongs to a child package
+
+inheritance:
+  mode: root
+  child_rule_files:
+    - apps/*/.agentrules.yml
+    - packages/*/.agentrules.yml
+  precedence: child_overrides_parent
+
+principles:
+  - id: cqrs
+    label: CQRS
+    statement: Separate write actions from read/query actions before changing shared state.
+    enforcement: Prefer explicit command surfaces, then read back through the owning query path.
+  - id: flat-structure
+    label: Flat structure
+    statement: Respect flat manifest data models and marker-based sequence semantics where order carries meaning.
+    enforcement: Do not reintroduce implicit trees or nested ownership models into flat data contracts.
+  - id: immutability
+    label: Immutability
+    statement: Treat canonical manifests and DTOs as stable contracts.
+    enforcement: Use controlled transforms and patches instead of casual in-place mutation.
+  - id: uncertainty-honesty
+    label: Uncertainty honesty
+    statement: If confidence is low or data is insufficient, state that explicitly instead of guessing.
+    enforcement: Prefer "모릅니다" or "정보가 부족하여 답변이 어렵습니다" when evidence is missing.
+  - id: no-hallucination
+    label: No hallucination
+    statement: Do not invent APIs, libraries, syntax, or capabilities.
+    enforcement: Verify against available sources or ask for clarification before answering.
+
+conventions:
+  - id: context-first
+    label: Context first
+    statement: Identify the owning bounded context before editing any file.
+  - id: docs-before-edit
+    label: Docs before edit
+    statement: Read the nearest canonical README or architecture note before making behavior changes.
+  - id: smallest-viable-change
+    label: Smallest viable change
+    statement: Keep edits confined to the narrowest path that satisfies the task.
+  - id: ask-when-ambiguous
+    label: Ask when ambiguous
+    statement: If the request is unclear or the context is missing, ask the user for the needed details instead of assuming.
+
+sops:
+  - id: classify-task
+    name: 경계-분류
+    trigger: Task spans more than one folder, shared tooling, or a contract boundary.
+    goal: Decide whether the work belongs in root policy, shared tooling, or a child package.
+    steps:
+      - Identify the owning bounded context and the smallest impacted path set.
+      - Read the canonical docs for that context before editing.
+      - Mark any cross-package coupling that must be preserved or avoided.
+      - Choose the narrowest verification path that can prove the change.
+    outputs:
+      - key: owning_context
+        type: string
+      - key: impacted_paths
+        type: array[string]
+      - key: verification_plan
+        type: markdown_list
+  - id: workspace-verify
+    name: 작업-검증
+    trigger: Changes to workspace scripts, shared config, or anything that may affect more than one package.
+    goal: Verify the workspace change without over-running unrelated checks.
+    steps:
+      - Run the smallest relevant validation first.
+      - Expand to workspace-wide checks only when the change crosses package boundaries.
+      - Report any downstream fallout explicitly, including packages that need follow-up.
+    outputs:
+      - key: validation_result
+        type: markdown_list
+      - key: follow_up_packages
+        type: array[string]
+      - key: open_risks
+        type: markdown_list
+
+override_policy:
+  allow_child_specialization: true
+  do_not_repeat_child_conventions: true
+  root_is_authoritative_for:
+    - workspace-wide policy
+    - cross-package verification
+    - generic agent behavior
