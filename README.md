@@ -1,116 +1,90 @@
 # Rendium Desktop Studio
 
-[한국어 버전 (Korean Version)](./README.ko.md)
+English | [한국어](./README.ko.md)
 
-A free, fully local, no-login video editor (open source). Built on top of the
-`@rendium/engine` declarative audio-reactive graphics/media pipeline, which is
-also published as a standalone open-source SDK.
+A free, local, no-login video editor built with Electron, React, and a separate declarative TypeScript media engine.
 
----
+Import local media → edit a timeline → preview the scene → export MP4 locally. The public source shows three engineering paths:
 
-## 0. Core Values
+- **Editor state:** typed intents, immutable manifests, patch reconciliation, and undo/redo. [Mutation pipeline](./packages/rendium-engine/src/store/EngineStore.ts) · [Contract tests](./packages/rendium-engine/src/__tests__/verification.test.ts)
+- **Rendering:** layer-ID lookup, ordered runtime layers, and recovery from reconciliation errors. [Reconciler](./packages/rendium-engine/src/timeline/SceneReconciler.ts) · [Recovery/order tests](./packages/rendium-engine/src/__tests__/SceneReconciler.test.ts)
+- **Media output:** WebCodecs encoding, MP4 muxing, and chunk writes across Electron IPC. [Export pipeline](./apps/desktop-studio/src/renderer/src/pipeline/WebCodecsPipeline.ts) · [File handling](./apps/desktop-studio/src/main/index.ts)
 
-Rendium Desktop Studio is built with a focus on privacy, speed, and simplicity:
+## Status and scope
 
-- **Fully Local**: All media processing, WebGL rendering, and MP4 encoding happen on your device. In the current open-source release, imported files never leave your machine (0 server cost). If the currently excluded OpenAI chat experiment is reconnected in a future release, only the messages, editor context, and images explicitly submitted to that optional service may be sent to its provider; media processing remains local.
-- **No Login Required**: Start editing immediately. No accounts, no subscriptions, no tracking.
-- **Fast and Lightweight**: Designed as a "Video Notepad" that opens quickly and restores your last project automatically.
-- **Permanent Asset Mapping**: Imported media files are automatically managed and mapped to your project directory, preventing broken file links when moving projects.
+This is a source-stage project, with workspace packages at `0.1.0`. As of October 2, 2026, there are no GitHub Releases or installer artifacts in those releases. The engine is available as [public workspace source](./packages/rendium-engine/README.md); its package configuration alone does not establish an npm release or a stable SDK contract.
 
----
+The core editing and media-output path is local. AI chat and quick-prompt entry points are disabled in the public OSS workflow; retained parsers, provider files, tests, and historical AI designs do not make that feature available. See the [OSS UI gate](./apps/desktop-studio/src/renderer/src/components/RightPanel.tsx) and [scope decisions](./TODO.md). Reconnecting an optional provider would require explaining which messages, editor context, and submitted images leave the device.
 
-## 1. Core Architecture
+The [release scope](./RELEASE_SCOPE.md) defines an import → edit → preview → export acceptance checklist. It is a plan, not a completed device acceptance report. Timeline UX remains an iteration area ([TODO §4.10](./TODO.md#410-timeline-ux-폴리시-v1-필수--옵션-a)); professional NLE parity and broad codec compatibility are outside that release scope.
 
-Rendium Engine is designed to maximize media processing throughput and synchronize control streams between users and AI agents through the following architectural patterns:
+## One edit, from intent to scene
 
-### 1.1 Interface-First Architecture
-- **Intent-Driven Separation**: To eliminate tight coupling between the UI layer (`desktop-studio`) and the reactive core engine (`@rendium/engine`), all state-changing actions are strictly defined as a unified `EngineIntent` TypeScript Discriminated Union.
-- **Unified AI-UI Pipeline**: Both user mouse gestures and AI agent suggestions (AiActionPreview) route through the same `EngineIntent` specification. This guarantees structural consistency and eliminates code duplication across input channels.
+For an existing layer `image-1` whose `appearance.opacity` is `1`, a committed opacity edit can use this engine entry point:
 
-### 1.2 State Management (Zustand + Immer)
-- **Unidirectional Data Flow**: The engine coordinates state mutations through Zustand wrapped with Immer's immutable recipe pipeline (`produceWithPatches`).
-- **Optimal JSON Patch Sync**: Instead of scanning the entire scene tree on state changes, Immer's O(1) JSON Patches are piped to `SceneReconciler`. This ensures only the affected WebGL and Web Audio API nodes are updated or instantiated, minimizing CPU overhead.
+```ts
+import { engineStore } from '@rendium/engine';
 
-### 1.3 Client-Side Media Pipeline
-- **Zero-Server Cost**: Capturing visual frames (WebGL readback) and mixing audio tracks (Web Audio mixing) are handled entirely on the client side.
-- **mp4-muxer Local Muxing**: Raw video and audio frames are encoded locally using WebCodecs API (`VideoEncoder`/`AudioEncoder`) and combined via the `mp4-muxer` library, enabling users to export high-definition MP4 files directly from the Electron app.
+engineStore.dispatchIntent({
+  type: 'CHANGE_OPACITY',
+  layerId: 'image-1',
+  opacity: 0.5,
+});
+```
 
----
+1. [`EngineIntent`](./packages/rendium-engine/src/_contracts/intents.contracts.ts) defines the payload; `dispatchIntent` validates it before routing.
+2. [`IntentRouter`](./packages/rendium-engine/src/store/IntentRouter.ts) changes `layers['image-1'].appearance.opacity` in an Immer recipe. [`EngineStore`](./packages/rendium-engine/src/store/EngineStore.ts) creates the next manifest plus forward/inverse patches, records history, and forwards the patches to the scene.
+3. The corresponding patch is shaped as `{ op: 'replace', path: ['layers', 'image-1', 'appearance', 'opacity'], value: 0.5 }`. [`SceneReconciler`](./packages/rendium-engine/src/timeline/SceneReconciler.ts) resolves the runtime layer by ID and applies `updateConfig({ opacity: 0.5 })`.
+4. React consumes engine snapshots through [`useSyncExternalStore`](./apps/desktop-studio/src/renderer/src/hooks/useEngineStore.ts). Undo/redo use the recorded patches; [engine tests](./packages/rendium-engine/src/__tests__/verification.test.ts) specify persisted edits, grouped edits, and transient-preview behavior.
 
-## 2. Technical Achievements
+This illustrates the public contract, not a standalone runnable project: the layer must exist first. During a drag or slider preview, `dispatchTransient` updates runtime state without adding manifest history; the committed intent creates the undo step.
 
-### 2.1 Electron Cross-Process IPC Optimization
-- **Buffered Chunk Streaming**: Instead of loading the entire compiled MP4 binary into renderer memory, encoded chunks are streamed to the Electron main process via `StreamTarget` and the `writeExportChunk` IPC channel.
-- **I/O Bottleneck Mitigation**: This streaming architecture avoids main process memory spikes and mitigates IPC latency, maintaining a smooth 60fps UI render loop even during high-resolution exports.
+## One export, from media to file
 
-### 2.2 Audio FFT Data & WebGL Shader Real-time Mapping
-- **Frame Synchronization**: Real-time Fast Fourier Transform (FFT) frequency and time-domain analysis data are sampled from the Web Audio `AnalyserNode` on every frame tick.
-- **Audio-Reactive Rendering**: Spectrum strengths are linearly interpolated and mapped to WebGL uniforms and transformation matrices. This yields fluid visual effects that synchronize precisely with audio peaks and troughs.
+For a timeline containing visual media and an audio layer, [`useExport`](./apps/desktop-studio/src/renderer/src/hooks/useExport.ts) passes the scene and selected export profile to `WebCodecsPipeline`:
 
-### 2.3 Agent Prompt Automation (`packages/agent-tools`)
-- **Automated Instruction Loading**: To keep AI agents (e.g., Cursor, Cline) aligned with the core architecture constraints (like the Zustand + Immer passive view or the 1D flat layer order), we created the `@rendium/agent-tools` package.
-- **Rule Composition & Validation**: It validates and merges the monorepo root-level `.agentrules.yml` policies with package-specific overrides, ensuring ID uniqueness for conventions and procedures.
-- **Context-Aware Prompts**: By reading package-level `required_reading` metadata, it constructs a complete, context-aware prompt template. This forces the agent to read onboarding guides first before attempting code edits, successfully preventing regression bugs and architectural drift.
+1. `prepareExport()` crosses the [preload bridge](./apps/desktop-studio/src/preload/index.ts). The [main process](./apps/desktop-studio/src/main/index.ts) opens a save dialog, creates the chosen local file, and returns an export ID.
+2. The [pipeline](./apps/desktop-studio/src/renderer/src/pipeline/WebCodecsPipeline.ts) requests a WebGPU device, renders frames, and passes them to `VideoEncoder`. When audio layers exist, it also uses `AudioEncoder`. Encoded video/audio chunks go into `mp4-muxer`.
+3. The muxer's chunked `StreamTarget` calls `writeExportChunk(exportId, buffer, position)`. Electron main writes each chunk to the file handle at the supplied offset.
+4. Finalization flushes the encoders, finalizes MP4 metadata, and requests file sync/close through IPC. The selected path is the output destination.
 
----
+The chunked design sends muxed output incrementally instead of assembling one complete MP4 buffer in the renderer. It does not establish a memory ceiling, guaranteed hardware acceleration, or 60fps during export. The pipeline requests `prefer-hardware`; codec, GPU, and device support still matter. [`useExport` tests](./apps/desktop-studio/src/renderer/src/hooks/useExport.test.tsx) mock the pipeline and are not end-to-end encoder/file acceptance evidence.
 
-## 3. Project Status & Strategic Retrospective
+## Design decisions and trade-offs
 
-### 3.1 Business Feasibility & Transition to Tech PoC
-- **Market & Platform Shift**: With YouTube and other major media platforms introducing stricter AI content disclosure rules and automated detection, simple wrapper B2C utilities face significant platform dependency risks.
-- **Workflow Friction Cost**: Analysis of early user journeys showed that a standalone desktop editor introduces context-switching friction when transferring assets manually between planning, editing, and distribution channels.
-- **Free + Open-Source First, Monetization by Feedback**: Forecast demand for a
-  paid subscription plan was negligible against incumbent editors like CapCut or
-  Adobe Premiere. Even so, ~100 days of work in the AI era is too significant to
-  shelve. The pragmatic move is to **release completely free first, build
-  awareness, and revisit monetization only after real user feedback accumulates**.
-  With that strategy, the project is positioned as a **"free, fully local,
-  no-login video editor"**, with both Rendium Desktop Studio and `@rendium/engine`
-  published as open source.
+| Decision | Why it exists | Boundary or cost |
+| --- | --- | --- |
+| Typed intents write the manifest; the scene reflects patches. | Keeps editor commands separate from runtime objects and gives persisted edits forward/inverse history. | Runtime and manifest must stay synchronized; recovery can rebuild the scene. [Store](./packages/rendium-engine/src/store/EngineStore.ts) · [Recovery tests](./packages/rendium-engine/src/__tests__/SceneReconciler.test.ts) |
+| Transient previews are separate from committed edits. | Avoids creating an undo entry for every pointer movement. | The UI must commit the final change explicitly. [Preview/commit fixture](./packages/rendium-engine/src/__tests__/verification.test.ts) |
+| Layers have an ID registry and a separate ordered array. | Property patches address a layer directly; order changes can reuse runtime instances. | The narrow O(1) claim concerns layer-ID registry access. Reconciliation loops over patches, and reordering rebuilds an array; reconciliation as a whole is not O(1). [Scene](./packages/rendium-engine/src/core/Scene.ts) · [Reconciler](./packages/rendium-engine/src/timeline/SceneReconciler.ts) |
 
----
+## Develop from source
 
----
+The [CI configuration](./.github/workflows/ci.yml) selects Node.js 20 and pnpm 10.33.0; the [root package](./package.json) pins pnpm 10.33.0. From the workspace root:
 
-## 4. Known Limitations
-
-- **Timeline UX**: The timeline interface is currently an active iteration area. While it supports basic layer management and dragging, advanced features like multi-track ripple editing or nested sequence previews are not yet implemented. See [TODO.md](./TODO.md) §4.10 for the current UX policy.
-- **AI Assistant**: AI-powered chat and quick-prompt surfaces are disabled and not connected to an AI provider in the current open-source release, so the core editing workflow remains fully local. The underlying `aiActionParser` and `aiJsonEnvelope` logic remains in the codebase as a PoC for automated video generation. If an optional OpenAI chat integration is reconnected, its privacy notice must explain that the messages, editor context, and images submitted to the chat are sent to the provider.
-
-## 5. Documentation Map
-
-To navigate the codebase architecture, historical design decisions, and coding style guides, start from the following documents:
-
-- **Technical Specification & Troubleshooting**:
-  - [English Technical Spec](./docs/en/technical-spec.md)
-  - [Korean Technical Spec](./docs/ko/technical-spec.md)
-- **Monorepo Architecture Decisions (ADRs)**:
-  - [Root Architecture Decisions (ADR-001 ~ 005)](./_docs/architecture-decisions/en)
-  - [Core Engine Architecture Decisions (ADR-001 ~ 011)](./packages/rendium-engine/_docs/history-architecture/en)
-  - [Desktop Studio Architecture Decisions (ADR-001 ~ 005)](./apps/desktop-studio/_docs/history-architecture/en)
-- **Coding Conventions**: Reference the root [Conventions Directory](./_docs/conventions/en) for TypeScript and comment formatting guidelines.
-- **Core Engine Internals (`packages/rendium-engine`)**:
-  - [Engine Core Architecture](./packages/rendium-engine/_docs/en/ARCHITECTURE.md)
-  - [Engine Developer Onboarding Guide](./packages/rendium-engine/_docs/onboarding/en/README.md)
-- **Desktop Studio App Shell (`apps/desktop-studio`)**:
-  - [App Shell Architecture & AI Deferral Decision](./apps/desktop-studio/_docs/history-architecture/en/README.md)
-- **Agent Tools (`packages/agent-tools`)**:
-  - [Agent Prompt Tools & CLI Guide](./packages/agent-tools/README.md)
-
----
-
-## 5. Development & Verification
-
-### 5.1 Prerequisites
-- Node.js (>= 18.0.0)
-- pnpm (10.33.0)
-
-### 5.2 Installation
-```bash
+```sh
 pnpm install
+pnpm dev:studio
 ```
 
-### 5.3 Build & Verify
-```bash
-pnpm verify
+Useful source checks and builds:
+
+```sh
+pnpm test:engine
+pnpm build:studio
 ```
+
+These are [workspace scripts](./package.json), not a claim that a fresh installation currently passes. At public base `3bfabbf7725cda8904f4dd8518c1edda1a59b074`, the observed [CI run](https://github.com/ThreeLightStudio/rendium-workspace/actions/runs/30613854869) failed during dependency installation and skipped verification. That is neither a passing verify nor an observed code-test failure.
+
+`pnpm verify` runs `pnpm check`, `pnpm check:data-f:all`, and the workspace tests/builds. **`check` uses `biome check --write .`**, so verification can rewrite files; use a clean, isolated checkout. Desktop development also runs Panda CSS codegen. See the [app guide](./apps/desktop-studio/README.md) for Storybook and platform packaging commands. Packaging scripts are build entry points, not shipped installers.
+
+## Documentation and contribution entry points
+
+Read current contracts and implementation before using prose as an API reference. Historical ADRs explain earlier decisions and may differ from today's contracts; performance wording in older documents should not be treated as a benchmark.
+
+- **Current engine reading path:** [Engine guide](./packages/rendium-engine/README.md) · [Onboarding](./packages/rendium-engine/_docs/onboarding/en/README.md) · [Architecture overview](./packages/rendium-engine/_docs/en/ARCHITECTURE.md)
+- **App and technical setup:** [Desktop Studio](./apps/desktop-studio/README.md) · [English technical spec/troubleshooting](./docs/en/technical-spec.md) · [Korean technical spec](./docs/ko/technical-spec.md)
+- **Design history:** [Root ADRs](./_docs/architecture-decisions/en) · [Engine ADRs](./packages/rendium-engine/_docs/history-architecture/en) · [Desktop ADRs](./apps/desktop-studio/_docs/history-architecture/en) · [App-shell and AI deferral record](./apps/desktop-studio/_docs/history-architecture/en/README.md)
+- **Contributor tools:** [Conventions](./_docs/conventions/en) · [Agent prompt tools and CLI](./packages/agent-tools/README.md) · [Contributing](./CONTRIBUTING.md)
+
+`agent-tools` loads and validates root/package rules and renders prompts with required-reading entries. This helps communicate architecture constraints; it is not proof that agents always comply or that regressions are prevented. [Loader](./packages/agent-tools/src/ConfigLoader.ts) · [Schema](./packages/agent-tools/src/AgentRulesSchema.ts) · [Renderer](./packages/agent-tools/src/PromptRenderer.ts)
